@@ -11,8 +11,10 @@ area**, and recommends what to consolidate. Built in response to an ask from Fas
 | [`api-spec/`](api-spec/) | OAS 3.0 spec of the API (`sprawl-scanner-api`, published to Exchange). |
 | [`python-reference/`](python-reference/) | Original Python prototype + calibration/model-comparison scripts. The Java engine was verified against it. |
 
-How it works, and the demo talk track: [`mule-app/README.md`](mule-app/README.md),
-[`mule-app/docs/talk-track.md`](mule-app/docs/talk-track.md).
+How sprawl is determined and how to tune the rules: [`mule-app/README.md` → How sprawl is determined](mule-app/README.md#how-sprawl-is-determined)
+and [Customising the matching rules](mule-app/README.md#customising-the-matching-rules).
+Demo: [`talk-track.md`](mule-app/docs/talk-track.md) and intro slides [`sprawl-scanner-intro.pptx`](mule-app/docs/sprawl-scanner-intro.pptx)
+(regenerate with `python mule-app/docs/make_slides.py`, needs `python-pptx`).
 
 ---
 
