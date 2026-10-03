@@ -1,0 +1,33 @@
+# Build / runtime output
+target/
+.mule/
+out/
+*.jar
+.zip_container/
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+*.code-workspace
+.claude/
+
+# Secrets: never commit. Real values go in Secured Application Properties (CloudHub)
+# or your shell environment / a local file matching one of these patterns.
+.env
+.env.*
+!.env.example
+*.secrets
+*-secrets.properties
+secure*.properties
+local*.properties
+*.pem
+*.key
+*.p12
+*.jks

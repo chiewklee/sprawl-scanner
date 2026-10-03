@@ -1,0 +1,11 @@
+#!/bin/sh
+# Blocks commits that contain credentials. Enable once per clone:
+#   git config core.hooksPath .githooks
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not installed (brew install gitleaks). Refusing to commit unscanned changes." >&2
+  exit 1
+fi
+gitleaks git --staged --no-banner --redact -v || {
+  echo "pre-commit: possible secret in staged changes. Remove it (use Secured Application Properties or env vars)." >&2
+  exit 1
+}

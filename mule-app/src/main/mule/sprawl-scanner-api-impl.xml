@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd ">
+    <apikit:config name="sprawl-scanner-api-config" api="resource::fa76c43c-f6d0-41fd-bdcd-214ccae74d41:sprawl-scanner-api:1.0.0:oas:zip:sprawl-scanner-api.yaml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <flow name="sprawl-scanner-api-main">
+        <http:listener config-ref="sprawl-scanner-api-httpListenerConfig" path="/api/v1/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="sprawl-scanner-api-config" />
+        <error-handler>
+            <on-error-propagate type="APP:NO_SCAN">
+                <ee:transform doc:name="APP:NO_SCAN">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: error.description default "No completed scan yet"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APP:NOT_FOUND">
+                <ee:transform doc:name="APP:NOT_FOUND">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: error.description default "Not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APP:CONFLICT">
+                <ee:transform doc:name="APP:CONFLICT">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: error.description default "A scan is already running"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">409</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:BAD_REQUEST">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Bad request"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">400</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Method not allowed"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">405</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_ACCEPTABLE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not acceptable"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">406</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Unsupported media type"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">415</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_IMPLEMENTED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not Implemented"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">501</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="sprawl-scanner-api-console">
+        <http:listener config-ref="sprawl-scanner-api-httpListenerConfig" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="sprawl-scanner-api-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+
+    <!-- ===================================================================== scans -->
+    <flow name="post:\scans:application\json:sprawl-scanner-api-config">
+        <set-variable variableName="request" value="#[payload default {}]" />
+        <flow-ref name="start-scan" />
+        <set-variable variableName="httpStatus" value="202" />
+    </flow>
+
+    <flow name="get:\scans:sprawl-scanner-api-config">
+        <flow-ref name="load-history" />
+        <ee:transform doc:name="Take">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+import take from dw::core::Arrays
+output application/json
+---
+vars.history take ((attributes.queryParams.limit default "50") as Number)]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="get:\scans\(scanId):sprawl-scanner-api-config">
+        <set-variable variableName="scanId" value="#[attributes.uriParams.scanId]" />
+        <flow-ref name="load-history" />
+        <set-variable variableName="scan" value="#[output application/java --- (vars.history filter ($.scanId == vars.scanId))[0]]" />
+        <choice>
+            <when expression="#[vars.scan == null]">
+                <raise-error type="APP:NOT_FOUND" description="#['Scan ' ++ vars.scanId ++ ' not found']" />
+            </when>
+        </choice>
+        <java:invoke-static class="com.mycompany.sprawl.SprawlEngine" method="progress(java.lang.String)">
+            <java:args>#[{arg0: vars.scanId}]</java:args>
+        </java:invoke-static>
+        <ee:transform doc:name="Merge progress">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+import mergeWith from dw::core::Objects
+output application/json
+---
+do {
+    var live = if (payload == "null") null else read(payload, "application/json")
+    ---
+    if (live == null) vars.scan
+    else vars.scan mergeWith {status: "running", phase: live.phase, progress: {done: live.done, total: live.total}}
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <!-- ==================================================================== assets -->
+    <flow name="get:\assets:sprawl-scanner-api-config">
+        <set-variable variableName="scanIdQuery" value="#[attributes.queryParams.scanId]" />
+        <flow-ref name="load-result" />
+        <ee:transform doc:name="Filter assets">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+do {
+    var q = lower(attributes.queryParams.q default "")
+    var t = attributes.queryParams."type"
+    var gap = attributes.queryParams.gap
+    ---
+    vars.result.assets filter ((a) ->
+        (t == null or a."type" == t)
+        and (gap == null or (a.gap as String) == gap)
+        and (q == "" or (lower(a.name default "") contains q) or (lower(a.assetId default "") contains q)))
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="get:\assets\(assetId):sprawl-scanner-api-config">
+        <set-variable variableName="assetId" value="#[attributes.uriParams.assetId]" />
+        <set-variable variableName="scanIdQuery" value="#[attributes.queryParams.scanId]" />
+        <flow-ref name="load-result" />
+        <set-variable variableName="asset" value="#[output application/java --- (vars.result.assets filter ($.assetId == vars.assetId))[0]]" />
+        <choice>
+            <when expression="#[vars.asset == null]">
+                <raise-error type="APP:NOT_FOUND" description="#['Asset ' ++ vars.assetId ++ ' not found']" />
+            </when>
+        </choice>
+        <ee:transform doc:name="Asset detail">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+fun strip(c) = c - "textKey" - "assetKey"
+---
+vars.asset ++ {
+    capabilities: (vars.result.capabilities filter ($.assetKey == vars.assetId)) map ((c) -> strip(c)),
+    overlaps: vars.result.overlapMatrix filter (($.source == vars.asset.name) or ($.target == vars.asset.name))
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <!-- ==================================================================== sprawl -->
+    <flow name="get:\sprawl:sprawl-scanner-api-config">
+        <set-variable variableName="scanIdQuery" value="#[attributes.queryParams.scanId]" />
+        <flow-ref name="load-result" />
+        <ee:transform doc:name="Summary">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.result filterObject ((v, k) -> ["scanId", "generatedAt", "embeddingModel", "judgeModel", "thresholds", "counts", "recommendations", "overlapMatrix", "durationSeconds"] contains (k as String))]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="get:\sprawl\clusters:sprawl-scanner-api-config">
+        <set-variable variableName="scanIdQuery" value="#[attributes.queryParams.scanId]" />
+        <flow-ref name="load-result" />
+        <ee:transform doc:name="Clusters">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+import mergeWith from dw::core::Objects
+import take from dw::core::Arrays
+output application/json
+fun strip(c) = c - "textKey" - "assetKey"
+---
+(vars.result.clusters take ((attributes.queryParams.limit default "50") as Number))
+    map ((c) -> c mergeWith {members: c.members map ((c) -> strip(c))})]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="get:\sprawl\gray-pairs:sprawl-scanner-api-config">
+        <set-variable variableName="scanIdQuery" value="#[attributes.queryParams.scanId]" />
+        <flow-ref name="load-result" />
+        <ee:transform doc:name="Gray pairs">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+import mergeWith from dw::core::Objects
+import take from dw::core::Arrays
+output application/json
+fun strip(c) = c - "textKey" - "assetKey"
+---
+do {
+    var v = attributes.queryParams.verdict
+    ---
+    ((vars.result.grayPairs filter ((p) -> v == null or p.verdict == v))
+        take ((attributes.queryParams.limit default "50") as Number))
+        map ((p) -> p mergeWith {a: strip(p.a), b: strip(p.b)})
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="post:\sprawl\find:application\json:sprawl-scanner-api-config">
+        <set-variable variableName="findRequest" value="#[payload]" />
+        <set-variable variableName="scanIdQuery" value="#[null]" />
+        <flow-ref name="load-result" />
+        <os:retrieve key="cache:embed" objectStore="cacheStore" target="embedCache">
+            <os:default-value>{}</os:default-value>
+        </os:retrieve>
+        <flow-ref name="build-config" />
+        <java:invoke-static class="com.mycompany.sprawl.SprawlEngine"
+                            method="find(java.lang.String,java.lang.String,java.lang.String,java.lang.String,int)">
+            <java:args>#[{arg0: vars.config, arg1: vars.resultRaw, arg2: vars.embedCache, arg3: vars.findRequest.description, arg4: (vars.findRequest.topK default 5) as Number}]</java:args>
+        </java:invoke-static>
+        <ee:transform doc:name="Matches">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+read(payload, "application/json")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="get:\health:sprawl-scanner-api-config">
+        <ee:transform doc:name="Health">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{status: "UP"}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+</mule>

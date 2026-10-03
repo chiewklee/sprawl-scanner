@@ -1,0 +1,4 @@
+# Real estate only: everything in the Anypoint Exchange org, no seed data.
+sources:
+  - kind: exchange
+    types: [rest-api, http-api, mcp, agent, agent-network]

@@ -1,0 +1,183 @@
+# Synthetic enterprise inventory with deliberately planted sprawl, modelled on a
+# professional-services firm (FOT / CRM, ITSM, HR, finance, knowledge).
+# Planted on purpose:
+#   - Salesforce account/opportunity reads built 4 times by different teams
+#   - ServiceNow incident creation built 3 times
+#   - Worker lookup on both PeopleSoft and Workday (mid-migration)
+#   - Executive-brief / account-summary agents that overlap (gray, not identical)
+#   - Two pricing/quote services that are near-duplicates
+assets:
+  - name: crm-sys-api
+    type: api
+    owner: Integration CoE
+    capabilities:
+      - name: getAccountById
+        description: Retrieve a Salesforce account by its Id, including industry, owner and billing address.
+      - name: searchAccounts
+        description: Search Salesforce accounts by name, industry or territory.
+      - name: getOpportunitiesByAccount
+        description: List the open opportunities for a Salesforce account with amount, stage and close date.
+      - name: updateOpportunityStage
+        description: Update the stage of a Salesforce opportunity.
+      - name: createContact
+        description: Create a new contact on a Salesforce account.
+
+  - name: sales-copilot-mcp
+    type: mcp
+    owner: Front Office Transformation
+    capabilities:
+      - name: lookup_customer
+        description: Look up a customer account in Salesforce by Id and return industry, owner and address.
+      - name: list_deals_for_customer
+        description: Get all open deals (opportunities) for a customer with amount, stage and expected close date.
+      - name: move_deal_stage
+        description: Change the sales stage of an opportunity in Salesforce.
+      - name: draft_account_plan
+        description: Draft an account plan for a client using CRM data, recent news and sector insights, then save it to the Account Plan object.
+
+  - name: fot-pursuit-agent
+    type: agent
+    owner: Front Office Transformation
+    capabilities:
+      - name: pursuit-account-lookup
+        description: Find a client account in the CRM and summarise its owner, industry and open pursuits.
+      - name: opportunity-pipeline
+        description: Show the open opportunity pipeline for an account with stage and amount.
+      - name: lead-qualification
+        description: Score and qualify inbound leads and convert qualified leads into accounts and opportunities.
+
+  - name: customer-360-api
+    type: api
+    owner: Data Platform
+    capabilities:
+      - name: GET /customers/{id}
+        description: Fetch the customer record from Salesforce by id, including industry and billing address.
+      - name: GET /customers/{id}/opportunities
+        description: Retrieve open opportunities for a customer, including stage, amount and close date.
+      - name: GET /customers/{id}/invoices
+        description: Retrieve invoices billed to the customer from the ERP.
+
+  - name: itsm-sys-api
+    type: api
+    owner: Integration CoE
+    capabilities:
+      - name: createIncident
+        description: Create a new ServiceNow incident with short description, caller, urgency and assignment group.
+      - name: getIncident
+        description: Get a ServiceNow incident by number with state and assignee.
+      - name: updateIncident
+        description: Update the state, assignee or work notes of a ServiceNow incident.
+
+  - name: helpdesk-agent
+    type: agent
+    owner: Digital Workplace
+    capabilities:
+      - name: raise-ticket
+        description: Raise a ServiceNow incident on behalf of an employee with urgency and assignment group.
+      - name: ticket-status
+        description: Check the status and assignee of an existing ServiceNow incident.
+      - name: password-reset
+        description: Reset an employee's Active Directory password after identity verification.
+
+  - name: servicenow-mcp
+    type: mcp
+    owner: IT Operations
+    capabilities:
+      - name: create_incident
+        description: Open a ServiceNow incident with a short description, caller, urgency and assignment group.
+      - name: get_change_request
+        description: Get a ServiceNow change request and its approval status.
+
+  - name: peoplesoft-hr-api
+    type: api
+    owner: HR Technology
+    capabilities:
+      - name: getEmployee
+        description: Get an employee profile from PeopleSoft HR by employee id, including job title, department and manager.
+      - name: getEmployeeLeaveBalance
+        description: Get an employee's remaining leave balance from PeopleSoft.
+
+  - name: workday-hr-mcp
+    type: mcp
+    owner: HR Technology
+    capabilities:
+      - name: get_worker
+        description: Retrieve a worker profile from Workday by employee id with job title, department and manager.
+      - name: get_time_off_balance
+        description: Retrieve a worker's time off balance from Workday.
+      - name: get_skills_profile
+        description: Return a worker's skills, certifications and industry experience for staffing decisions.
+
+  - name: engagement-staffing-agent
+    type: agent
+    owner: Advisory Operations
+    capabilities:
+      - name: recommend-staff
+        description: Recommend available practitioners for an engagement based on skills, certifications, industry experience and utilisation.
+      - name: check-availability
+        description: Check a practitioner's availability and current utilisation across engagements.
+
+  - name: exec-brief-agent
+    type: agent
+    owner: Front Office Transformation
+    capabilities:
+      - name: executive-brief
+        description: Produce an executive brief for a client account using internet news, CRM opportunity data and sector insight PDFs.
+      - name: executive-profiles
+        description: Summarise news and background on a client's executive team.
+
+  - name: account-insights-mcp
+    type: mcp
+    owner: Data Platform
+    capabilities:
+      - name: summarize_account
+        description: Summarise a client account's recent activity, open opportunities and relevant news headlines.
+      - name: sector_insights
+        description: Return sector and industry insights for a client from the thought-leadership knowledge base.
+
+  - name: pricing-api
+    type: api
+    owner: Finance Systems
+    capabilities:
+      - name: calculateQuote
+        description: Calculate a price quote for an engagement from rate card, hours by grade and discount.
+      - name: getRateCard
+        description: Return the current rate card by grade and region.
+
+  - name: deal-pricing-mcp
+    type: mcp
+    owner: Front Office Transformation
+    capabilities:
+      - name: price_engagement
+        description: Compute pricing for an engagement using the rate card, effort by grade and an optional discount.
+      - name: get_rate_card
+        description: Fetch the rate card by grade and region.
+      - name: margin_check
+        description: Check whether a proposed price meets the minimum margin threshold for approval.
+
+  - name: knowledge-search-mcp
+    type: mcp
+    owner: Knowledge Management
+    capabilities:
+      - name: search_thought_leadership
+        description: Search the thought-leadership library and return relevant PDFs and excerpts.
+      - name: get_credential
+        description: Retrieve a past engagement credential (case study) for use in proposals.
+
+  - name: partner-comp-agent
+    type: agent
+    owner: Partner Affairs
+    capabilities:
+      - name: comp-explainer
+        description: Explain a partner's compensation statement, units and performance metrics in plain language.
+      - name: comp-what-if
+        description: Model what-if scenarios for partner compensation based on revenue and performance changes.
+
+  - name: risk-onboarding-api
+    type: api
+    owner: Risk Management
+    capabilities:
+      - name: runIndependenceCheck
+        description: Run an auditor independence and conflict check for a prospective client.
+      - name: screenSanctions
+        description: Screen a client entity against sanctions and PEP watchlists.

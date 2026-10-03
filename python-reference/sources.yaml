@@ -1,0 +1,75 @@
+# Example sources. Replace the YOUR-* hosts with your own MCP endpoints.
+# Sprawl Scanner sources. No secrets in this file:
+#   headers support ${ENV_VAR}; a source whose env var is unset is skipped.
+#   bearer_file reads a bearer token from disk.
+
+# Governed entry points: these win consolidation ties and are never recommended
+# for retirement (e.g. the Omni-gateway route over a direct point-to-point one).
+preferred_assets:
+  - sfdc-headless-360-via-omni-gateway
+
+sources:
+  # --- Anypoint Exchange: every REST/HTTP API, MCP server and agent in the org.
+  # Creds: ANYPOINT_CLIENT_ID/SECRET env, or ~/.config/sprawl-scanner/anypoint_connected_app
+  - kind: exchange
+    types: [rest-api, http-api, mcp, agent]
+
+  # --- Seeded inventory with planted duplicates (demo baseline)
+  - kind: seed
+    path: seed/inventory.yaml
+
+  # --- Local OpenAPI specs from ~/projects/active
+  - kind: openapi
+    name: sap-order-system-api
+    path: ~/projects/active/sap-order-system-api-spec/sap-order-system-api-spec.yaml
+  - kind: openapi
+    name: jira-tickets-api
+    path: ~/projects/active/jira-tickets-api/jira-tickets-api.yaml
+  - kind: openapi
+    name: acord-life-application-api
+    path: ~/projects/active/acord-life-application-api/acord-life-application-api.yaml
+  - kind: openapi
+    name: llm-open-connector
+    path: ~/projects/active/AMD-Agentforce-Gateway/llm-open-connector-spec/llm-open-connector.yaml
+
+  # --- A2A agent cards
+  - kind: agent_card
+    name: broker-agent-interactions
+    path: ~/projects/active/a2d-mocks/mulesoft-mcp-mock-specs/specs/example-a2a-card.json
+
+  # --- Live MCP servers (tools/list over Streamable HTTP)
+  # The same H360 server reached two ways: a real-world sprawl example
+  # (governed gateway route vs. direct point-to-point).
+  - kind: mcp
+    name: sfdc-headless-360-via-omni-gateway
+    url: https://YOUR-FLEX-GATEWAY.cloudhub.io/sfdc-headless-360/
+    bearer_file: /tmp/h360_token.txt
+    owner: Salesforce
+  - kind: mcp
+    name: sfdc-headless-360
+    url: https://api.salesforce.com/platform/mcp/v1/platform/headless-360
+    bearer_file: /tmp/h360_token.txt
+    owner: Salesforce
+  - kind: mcp
+    name: sap-order
+    url: https://YOUR-FLEX-GATEWAY.cloudhub.io/sap-order/mcp
+  - kind: mcp
+    name: a2d-platform
+    url: https://YOUR-MCP-HOST/mcp
+    headers: {Authorization: "Bearer ${A2D_TOKEN}"}
+  - kind: mcp
+    name: mulesoft-a4d
+    url: http://127.0.0.1:8686/mcp
+    headers: {Authorization: "Bearer ${MULESOFT_A4D_TOKEN}", x-mcp-client-id: A4D_CLIENT}
+  - kind: mcp
+    name: abacdemo
+    url: https://YOUR-AGENT-NETWORK-INGRESS.cloudhub.io/abacdemo/mcp
+    headers: {Authorization: "Bearer ${ABACDEMO_TOKEN}"}
+  - kind: mcp
+    name: hrmcpjwt
+    url: https://YOUR-AGENT-NETWORK-INGRESS.cloudhub.io/hrmcpjwt/mcp
+    headers: {Authorization: "Bearer ${HRMCPJWT_TOKEN}"}
+  - kind: mcp
+    name: pricingmbridge
+    url: https://YOUR-FLEX-GATEWAY.cloudhub.io/pricingmbridge/mcp
+    headers: {Authorization: "Bearer ${PRICINGMBRIDGE_TOKEN}"}

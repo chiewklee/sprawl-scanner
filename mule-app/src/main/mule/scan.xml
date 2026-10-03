@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+
+    <!-- Object Store layout (scanStore):
+           history       JSON array of scan records, newest first (capped at scan.historySize)
+           running       scanId of the scan in progress, if any
+           latest        scanId of the latest completed scan
+           result:<id>   full scan result
+         cacheStore: cache:embed (sha256(text) -> base64 vector), cache:judge (pair key -> verdict) -->
+
+    <!-- ============================================================ start / queue -->
+    <sub-flow name="start-scan">
+        <flow-ref name="load-history" />
+        <os:retrieve key="running" objectStore="scanStore" target="runningId">
+            <os:default-value>#[""]</os:default-value>
+        </os:retrieve>
+        <choice doc:name="Already running?">
+            <when expression="#[do {
+                    var r = (vars.history filter ($.scanId == vars.runningId))[0]
+                    ---
+                    vars.runningId != '' and r != null and (['queued', 'running'] contains r.status)
+                        and ((now() as Number) - (r.createdAt as DateTime as Number)) &lt; 1800
+                }]">
+                <raise-error type="APP:CONFLICT" description="#['Scan ' ++ vars.runningId ++ ' is already running']" />
+            </when>
+        </choice>
+        <set-variable variableName="scanId" value="#[uuid()]" />
+        <ee:transform doc:name="Scan record">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    scanId: vars.scanId,
+    status: "queued",
+    createdAt: now() as String,
+    request: vars.request default {}
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <set-variable variableName="record" value="#[payload]" />
+        <os:store key="history" objectStore="scanStore">
+            <os:value><![CDATA[#[%dw 2.0
+import take from dw::core::Arrays
+output application/json
+---
+write(([vars.record] ++ vars.history) take (p('scan.historySize') as Number), "application/json")]]]></os:value>
+        </os:store>
+        <os:store key="running" objectStore="scanStore">
+            <os:value>#[vars.scanId]</os:value>
+        </os:store>
+        <vm:publish config-ref="scanVm" queueName="scanQueue">
+            <vm:content>#[write({scanId: vars.scanId, request: vars.request default {}}, "application/json")]</vm:content>
+        </vm:publish>
+        <logger level="INFO" message="#['Queued scan ' ++ vars.scanId]" />
+        <set-payload value="#[vars.record]" mimeType="application/json" />
+    </sub-flow>
+
+    <!-- ===================================================================== worker -->
+    <flow name="scan-worker">
+        <vm:listener config-ref="scanVm" queueName="scanQueue" numberOfConsumers="1" />
+        <set-variable variableName="job" value="#[read(payload, 'application/json')]" />
+        <set-variable variableName="scanId" value="#[vars.job.scanId]" />
+        <set-variable variableName="request" value="#[vars.job.request]" />
+        <set-variable variableName="changes" value="#[{status: 'running', startedAt: now() as String}]" />
+        <flow-ref name="update-record" />
+        <os:retrieve key="cache:embed" objectStore="cacheStore" target="embedCache">
+            <os:default-value>#["{}"]</os:default-value>
+        </os:retrieve>
+        <os:retrieve key="cache:judge" objectStore="cacheStore" target="judgeCache">
+            <os:default-value>#["{}"]</os:default-value>
+        </os:retrieve>
+        <flow-ref name="build-config" />
+        <logger level="INFO" message="#['Scan ' ++ vars.scanId ++ ' started']" />
+        <java:invoke-static class="com.mycompany.sprawl.SprawlEngine"
+                            method="scan(java.lang.String,java.lang.String,java.lang.String,java.lang.String)">
+            <java:args>#[{arg0: vars.config, arg1: vars.embedCache, arg2: vars.judgeCache, arg3: vars.scanId}]</java:args>
+        </java:invoke-static>
+        <set-variable variableName="out" value="#[read(payload, 'application/json')]" />
+        <os:store key="#['result:' ++ vars.scanId]" objectStore="scanStore">
+            <os:value>#[write(vars.out.result, 'application/json')]</os:value>
+        </os:store>
+        <os:store key="cache:embed" objectStore="cacheStore">
+            <os:value>#[write(vars.out.embedCache, 'application/json')]</os:value>
+        </os:store>
+        <os:store key="cache:judge" objectStore="cacheStore">
+            <os:value>#[write(vars.out.judgeCache, 'application/json')]</os:value>
+        </os:store>
+        <os:store key="latest" objectStore="scanStore">
+            <os:value>#[vars.scanId]</os:value>
+        </os:store>
+        <set-variable variableName="changes" value="#[{
+            status: 'completed',
+            finishedAt: now() as String,
+            durationSeconds: vars.out.result.durationSeconds,
+            embeddingModel: vars.out.result.embeddingModel,
+            judgeModel: vars.out.result.judgeModel,
+            counts: vars.out.result.counts
+        }]" />
+        <flow-ref name="update-record" />
+        <flow-ref name="clear-running" />
+        <logger level="INFO" message="#['Scan ' ++ vars.scanId ++ ' completed: ' ++ write(vars.out.result.counts, 'application/json')]" />
+        <error-handler>
+            <on-error-continue>
+                <logger level="ERROR" message="#['Scan ' ++ (vars.scanId default '?') ++ ' failed: ' ++ (error.description default '')]" />
+                <set-variable variableName="changes" value="#[{status: 'failed', finishedAt: now() as String, error: error.description default 'unknown error'}]" />
+                <flow-ref name="update-record" />
+                <flow-ref name="clear-running" />
+            </on-error-continue>
+        </error-handler>
+    </flow>
+
+    <!-- ================================================================== schedule -->
+    <flow name="scan-scheduler">
+        <scheduler>
+            <scheduling-strategy>
+                <cron expression="${scan.schedule.cron}" timeZone="UTC" />
+            </scheduling-strategy>
+        </scheduler>
+        <choice>
+            <when expression="#[p('scan.schedule.enabled') == 'true']">
+                <set-variable variableName="request" value="#[{}]" />
+                <try>
+                    <flow-ref name="start-scan" />
+                    <error-handler>
+                        <on-error-continue type="APP:CONFLICT">
+                            <logger level="INFO" message="Scheduled scan skipped: a scan is already running" />
+                        </on-error-continue>
+                    </error-handler>
+                </try>
+            </when>
+        </choice>
+    </flow>
+
+    <!-- =================================================================== helpers -->
+    <sub-flow name="load-history">
+        <os:retrieve key="history" objectStore="scanStore" target="historyRaw">
+            <os:default-value>#["[]"]</os:default-value>
+        </os:retrieve>
+        <set-variable variableName="history" value="#[read(vars.historyRaw, 'application/json')]" />
+    </sub-flow>
+
+    <!-- Merges vars.changes into the history record for vars.scanId. -->
+    <sub-flow name="update-record">
+        <flow-ref name="load-history" />
+        <os:store key="history" objectStore="scanStore">
+            <os:value><![CDATA[#[%dw 2.0
+import mergeWith from dw::core::Objects
+output application/json
+---
+write(vars.history map ((r) -> if (r.scanId == vars.scanId) (r mergeWith vars.changes) else r), "application/json")]]]></os:value>
+        </os:store>
+    </sub-flow>
+
+    <sub-flow name="clear-running">
+        <try>
+            <os:remove key="running" objectStore="scanStore" />
+            <error-handler>
+                <on-error-continue type="OS:KEY_NOT_FOUND">
+                    <logger level="DEBUG" message="no running marker" />
+                </on-error-continue>
+            </error-handler>
+        </try>
+    </sub-flow>
+
+    <!-- Sets vars.result (parsed) and vars.resultRaw for vars.scanIdQuery, or the latest scan. -->
+    <sub-flow name="load-result">
+        <choice>
+            <when expression="#[isEmpty(vars.scanIdQuery)]">
+                <os:retrieve key="latest" objectStore="scanStore" target="resultId">
+                    <os:default-value>#[""]</os:default-value>
+                </os:retrieve>
+            </when>
+            <otherwise>
+                <set-variable variableName="resultId" value="#[vars.scanIdQuery]" />
+            </otherwise>
+        </choice>
+        <choice>
+            <when expression="#[isEmpty(vars.resultId)]">
+                <raise-error type="APP:NO_SCAN" description="No completed scan yet. Start one with POST /scans." />
+            </when>
+        </choice>
+        <os:retrieve key="#['result:' ++ vars.resultId]" objectStore="scanStore" target="resultRaw">
+            <os:default-value>#[""]</os:default-value>
+        </os:retrieve>
+        <choice>
+            <when expression="#[isEmpty(vars.resultRaw)]">
+                <raise-error type="APP:NO_SCAN" description="#['No result for scan ' ++ vars.resultId]" />
+            </when>
+        </choice>
+        <set-variable variableName="result" value="#[read(vars.resultRaw, 'application/json')]" />
+    </sub-flow>
+
+    <!-- Engine config: properties + secured properties + the scan request (vars.request). -->
+    <sub-flow name="build-config">
+        <ee:transform doc:name="Engine config">
+            <ee:variables>
+                <ee:set-variable variableName="config"><![CDATA[%dw 2.0
+output application/java
+var req = vars.request default {}
+---
+write({
+    anypoint: {
+        baseUrl: p('anypoint.baseUrl'),
+        clientId: p('anypoint.clientId'),
+        clientSecret: p('anypoint.clientSecret'),
+        orgId: p('anypoint.orgId')
+    },
+    gemini: {
+        apiKey: p('gemini.apiKey'),
+        embedModel: p('gemini.embedModel'),
+        judgeModel: p('gemini.judgeModel'),
+        proRpm: p('gemini.proRpm') as Number,
+        flashRpm: p('gemini.flashRpm') as Number
+    },
+    thresholds: {
+        redundant: p('thresholds.redundant') as Number,
+        gray: p('thresholds.gray') as Number
+    },
+    preferredAssets: ((p('scan.preferredAssets') default "") splitBy ",") map trim($) filter ($ != ""),
+    workers: p('scan.workers') as Number,
+    mcpAuth: [{
+        name: "salesforce",
+        hosts: ((p('mcpAuth.salesforce.hosts') default "") splitBy ",") map trim($) filter ($ != ""),
+        tokenUrl: p('mcpAuth.salesforce.tokenUrl'),
+        clientId: p('mcpAuth.salesforce.clientId') default "",
+        clientSecret: p('mcpAuth.salesforce.clientSecret') default ""
+    }],
+    types: req.types default ["rest-api", "http-api", "mcp", "agent", "agent-network"],
+    liveMcp: req.liveMcp default true,
+    judge: req.judge default true,
+    judgeModel: req.judgeModel default "",
+    judgeLimit: req.judgeLimit default (p('scan.judgeLimit') as Number),
+    judgeRpm: req.judgeRpm default null
+}, "application/json")]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+    </sub-flow>
+</mule>

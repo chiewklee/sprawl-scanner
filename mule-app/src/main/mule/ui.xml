@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <!-- Single-page UI (src/main/resources/web/index.html). It calls the API at /api/v1. -->
+    <flow name="ui">
+        <http:listener config-ref="sprawl-scanner-api-httpListenerConfig" path="/">
+            <http:response statusCode="200">
+                <http:headers>#[{'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache'}]</http:headers>
+            </http:response>
+        </http:listener>
+        <set-payload value="#[readUrl('classpath://web/index.html', 'text/plain')]" mimeType="text/html" />
+    </flow>
+</mule>

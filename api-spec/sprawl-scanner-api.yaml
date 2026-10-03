@@ -1,0 +1,537 @@
+openapi: 3.0.3
+info:
+  title: Sprawl Scanner API
+  version: 1.0.0
+  description: |
+    Scans the Anypoint Exchange org (APIs, MCP servers, agents, agent networks), normalises
+    every asset into capabilities (API operations, MCP tools, agent skills), and finds
+    sprawl: capabilities that are unique, redundant, or overlapping (gray) across assets.
+
+    Similarity uses Gemini embeddings; gray pairs are judged by a Gemini model. Scans are
+    asynchronous: `POST /scans` returns immediately, poll `GET /scans/{scanId}`.
+    All read endpoints serve the latest completed scan unless `scanId` is given.
+servers:
+  - url: /api/v1
+tags:
+  - name: Scans
+  - name: Assets
+  - name: Sprawl
+  - name: Health
+
+paths:
+  /scans:
+    post:
+      tags: [Scans]
+      operationId: startScan
+      summary: Start a scan of the Exchange org
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '202':
+          description: Scan queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '409':
+          description: A scan is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags: [Scans]
+      operationId: listScans
+      summary: Scan history, newest first
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Scans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scan'
+
+  /scans/{scanId}:
+    get:
+      tags: [Scans]
+      operationId: getScan
+      summary: Status and progress of one scan
+      parameters:
+        - $ref: '#/components/parameters/ScanIdPath'
+      responses:
+        '200':
+          description: Scan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /assets:
+    get:
+      tags: [Assets]
+      operationId: listAssets
+      summary: Assets from a scan
+      parameters:
+        - $ref: '#/components/parameters/ScanIdQuery'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/AssetType'
+        - name: gap
+          in: query
+          description: true = only assets without capability metadata
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          description: Case-insensitive substring match on name or assetId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetSummary'
+        '404':
+          $ref: '#/components/responses/NoScan'
+
+  /assets/{assetId}:
+    get:
+      tags: [Assets]
+      operationId: getAsset
+      summary: One asset with its capabilities and overlaps
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/ScanIdQuery'
+      responses:
+        '200':
+          description: Asset detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sprawl:
+    get:
+      tags: [Sprawl]
+      operationId: getSprawlSummary
+      summary: Sprawl summary, recommendations and asset-overlap matrix
+      parameters:
+        - $ref: '#/components/parameters/ScanIdQuery'
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SprawlSummary'
+        '404':
+          $ref: '#/components/responses/NoScan'
+
+  /sprawl/clusters:
+    get:
+      tags: [Sprawl]
+      operationId: listClusters
+      summary: Redundancy clusters (same capability implemented on several assets)
+      parameters:
+        - $ref: '#/components/parameters/ScanIdQuery'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Clusters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cluster'
+        '404':
+          $ref: '#/components/responses/NoScan'
+
+  /sprawl/gray-pairs:
+    get:
+      tags: [Sprawl]
+      operationId: listGrayPairs
+      summary: Overlapping capability pairs with the judge's verdict
+      parameters:
+        - $ref: '#/components/parameters/ScanIdQuery'
+        - $ref: '#/components/parameters/Limit'
+        - name: verdict
+          in: query
+          schema:
+            $ref: '#/components/schemas/Verdict'
+      responses:
+        '200':
+          description: Gray pairs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GrayPair'
+        '404':
+          $ref: '#/components/responses/NoScan'
+
+  /sprawl/find:
+    post:
+      tags: [Sprawl]
+      operationId: findExistingCapability
+      summary: Does a capability like this already exist?
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+                  example: Create a ServiceNow incident for an employee
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 25
+                  default: 5
+      responses:
+        '200':
+          description: Closest existing capabilities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Match'
+        '404':
+          $ref: '#/components/responses/NoScan'
+
+  /health:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: Liveness
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+components:
+  parameters:
+    ScanIdPath:
+      name: scanId
+      in: path
+      required: true
+      schema:
+        type: string
+    ScanIdQuery:
+      name: scanId
+      in: query
+      description: Defaults to the latest completed scan
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 50
+
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoScan:
+      description: No completed scan yet (or unknown scanId)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    AssetType:
+      type: string
+      enum: [api, mcp, agent]
+    Status:
+      type: string
+      enum: [unique, gray, redundant]
+    Verdict:
+      type: string
+      enum: [duplicate, overlap, distinct]
+    CapabilitySource:
+      type: string
+      description: Where the asset's capabilities came from
+      enum: [oas, raml, mcp-metadata, live-tools-list, agent-network, description, none]
+
+    ScanRequest:
+      type: object
+      properties:
+        types:
+          type: array
+          description: Exchange asset types to include
+          items:
+            type: string
+            enum: [rest-api, http-api, mcp, agent, agent-network]
+          default: [rest-api, http-api, mcp, agent, agent-network]
+        liveMcp:
+          type: boolean
+          default: true
+          description: Read tools/list from running MCP servers that Exchange doesn't describe
+        judge:
+          type: boolean
+          default: true
+        judgeModel:
+          type: string
+          description: Overrides the configured judge model, e.g. gemini-3.1-pro-preview
+        judgeLimit:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 400
+
+    Scan:
+      type: object
+      required: [scanId, status, createdAt]
+      properties:
+        scanId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        phase:
+          type: string
+          enum: [ingesting, embedding, analysing, judging, storing, done]
+        progress:
+          type: object
+          properties:
+            done:
+              type: integer
+            total:
+              type: integer
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: number
+        request:
+          $ref: '#/components/schemas/ScanRequest'
+        embeddingModel:
+          type: string
+        judgeModel:
+          type: string
+        counts:
+          $ref: '#/components/schemas/Counts'
+        error:
+          type: string
+
+    Counts:
+      type: object
+      properties:
+        assets:
+          type: integer
+        capabilities:
+          type: integer
+        unique:
+          type: integer
+        gray:
+          type: integer
+        redundant:
+          type: integer
+        clusters:
+          type: integer
+        undocumented:
+          type: integer
+        grayJudged:
+          type: integer
+        grayJudgeFailed:
+          type: integer
+
+    AssetSummary:
+      type: object
+      properties:
+        assetId:
+          type: string
+        groupId:
+          type: string
+        name:
+          type: string
+        exchangeType:
+          type: string
+          example: mcp
+        type:
+          $ref: '#/components/schemas/AssetType'
+        version:
+          type: string
+        capabilityCount:
+          type: integer
+        capabilitySource:
+          $ref: '#/components/schemas/CapabilitySource'
+        gap:
+          type: boolean
+        note:
+          type: string
+        redundantCount:
+          type: integer
+        grayCount:
+          type: integer
+
+    Capability:
+      type: object
+      properties:
+        id:
+          type: string
+        asset:
+          type: string
+        type:
+          $ref: '#/components/schemas/AssetType'
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/Status'
+
+    Overlap:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        redundant:
+          type: integer
+        gray:
+          type: integer
+        total:
+          type: integer
+        coverage:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    AssetDetail:
+      allOf:
+        - $ref: '#/components/schemas/AssetSummary'
+        - type: object
+          properties:
+            capabilities:
+              type: array
+              items:
+                $ref: '#/components/schemas/Capability'
+            overlaps:
+              type: array
+              items:
+                $ref: '#/components/schemas/Overlap'
+
+    SprawlSummary:
+      type: object
+      properties:
+        scanId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        embeddingModel:
+          type: string
+        judgeModel:
+          type: string
+        thresholds:
+          type: object
+          properties:
+            redundant:
+              type: number
+            gray:
+              type: number
+        counts:
+          $ref: '#/components/schemas/Counts'
+        recommendations:
+          type: array
+          items:
+            type: string
+        overlapMatrix:
+          type: array
+          items:
+            $ref: '#/components/schemas/Overlap'
+
+    Cluster:
+      type: object
+      properties:
+        canonical:
+          type: string
+          description: Capability id suggested as the one to keep
+        meanScore:
+          type: number
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+
+    GrayPair:
+      type: object
+      properties:
+        a:
+          $ref: '#/components/schemas/Capability'
+        b:
+          $ref: '#/components/schemas/Capability'
+        score:
+          type: number
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        rationale:
+          type: string
+
+    Match:
+      type: object
+      properties:
+        capability:
+          $ref: '#/components/schemas/Capability'
+        score:
+          type: number
+        verdict:
+          type: string
+          enum: [redundant, gray, likely-new]
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        detail:
+          type: string

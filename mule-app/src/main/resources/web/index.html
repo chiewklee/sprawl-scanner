@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sprawl Scanner</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --accent: #2a78d6; --accent-ink: #ffffff;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --track: #e8e7e3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #383835;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --accent: #3987e5; --track: #2a2a28;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-0: #121211; --surface-1: #1a1a19; --border: #383835;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --accent: #3987e5; --track: #2a2a28;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--surface-0); color: var(--text-primary); min-height: 100vh;
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 24px; padding: 14px 28px;
+  background: var(--surface-1); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 18px; margin: 0; }
+nav { display: flex; gap: 4px; }
+nav button { background: none; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+  color: var(--text-secondary); font: inherit; }
+nav button[aria-current="page"] { background: var(--surface-0); color: var(--text-primary); font-weight: 600; }
+.spacer { flex: 1; }
+main { padding: 20px 28px 60px; max-width: 1500px; }
+section.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 20px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+.muted { color: var(--text-muted); } .err { color: var(--critical); }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+label { color: var(--text-secondary); }
+input[type=text], select, textarea { font: inherit; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; }
+textarea { width: 100%; min-height: 64px; resize: vertical; }
+button.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
+  padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+button.primary:disabled { opacity: .5; cursor: default; }
+button.ghost { background: none; border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px;
+  padding: 6px 12px; font: inherit; cursor: pointer; }
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.kpi .l { color: var(--text-secondary); font-size: 12px; }
+.kpi .v { font-size: 30px; font-weight: 600; margin: 2px 0 4px; }
+.badge { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+  color: #0b0b0b; font-size: 10px; flex: none; }
+table.grid { width: 100%; border-collapse: collapse; }
+.grid th, .grid td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.grid th { color: var(--text-secondary); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--surface-1); }
+.grid tr.click { cursor: pointer; } .grid tr.click:hover td { background: var(--surface-0); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.desc { color: var(--text-secondary); max-width: 560px; }
+code { font-size: 12px; }
+.meter { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; min-width: 240px; }
+.meter > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s; }
+.scroll { overflow: auto; max-height: 640px; }
+details { border-top: 1px solid var(--border); padding: 8px 0; } summary { cursor: pointer; }
+ul.recs { margin: 0; padding-left: 20px; } ul.recs li { margin: 5px 0; }
+.heat { border-collapse: separate; border-spacing: 2px; }
+.heat th { font-weight: 500; color: var(--text-secondary); font-size: 12px; text-align: right; padding: 2px 8px; white-space: nowrap; }
+.heat thead th { vertical-align: bottom; text-align: left; }
+.vert { writing-mode: vertical-rl; transform: rotate(180deg); }
+.heat td { width: 32px; height: 28px; text-align: center; font-size: 11px; border-radius: 4px; }
+.heat td.cell { border: 1px solid var(--border); } .heat td.cell:hover { outline: 2px solid var(--text-primary); }
+.heat td.self { color: var(--text-muted); }
+.ramp { display: inline-flex; vertical-align: middle; margin: 0 6px; } .ramp i { width: 14px; height: 10px; display: inline-block; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 20; }
+.split { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<header>
+  <h1>Sprawl Scanner</h1>
+  <nav>
+    <button data-page="scan" aria-current="page">Scan</button>
+    <button data-page="assets" aria-current="false">Assets</button>
+    <button data-page="sprawl" aria-current="false">Sprawl</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="latestInfo" class="muted"></span>
+  <button class="ghost" id="themeBtn" title="Toggle light / dark">◐ Theme</button>
+</header>
+<main>
+
+<!-- ================================================================ SCAN -->
+<div id="page-scan">
+  <section class="card">
+    <h2>Scan your Exchange</h2>
+    <div class="row">
+      <span class="muted">Asset types:</span>
+      <label><input type="checkbox" name="types" value="rest-api" checked> REST APIs</label>
+      <label><input type="checkbox" name="types" value="http-api" checked> HTTP APIs</label>
+      <label><input type="checkbox" name="types" value="mcp" checked> MCP servers</label>
+      <label><input type="checkbox" name="types" value="agent" checked> Agents</label>
+      <label><input type="checkbox" name="types" value="agent-network" checked> Agent networks</label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label title="Read tools/list from running MCP servers that Exchange doesn't describe"><input type="checkbox" id="liveMcp" checked> Live MCP tool lists</label>
+      <label><input type="checkbox" id="judge" checked> Judge gray pairs</label>
+      <label>Judge model
+        <select id="judgeModel">
+          <option value="">Default (Flash)</option>
+          <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+          <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (slower, rate-limited)</option>
+        </select>
+      </label>
+      <div class="spacer"></div>
+      <button class="primary" id="startBtn">Start scan</button>
+    </div>
+    <div id="scanStatus" class="hidden" style="margin-top:16px">
+      <div class="row"><b id="statusText"></b><span class="muted" id="statusSub"></span></div>
+      <div class="row" style="margin-top:8px"><div class="meter" style="flex:1"><i id="meterBar" style="width:0%"></i></div>
+        <span class="muted num" id="meterText"></span></div>
+    </div>
+    <p id="scanMsg" class="err"></p>
+  </section>
+  <section class="card">
+    <div class="row"><h2 style="margin:0">Scan history</h2><div class="spacer"></div><button class="ghost" id="refreshHist">Refresh</button></div>
+    <div class="scroll" style="margin-top:10px"><table class="grid" id="histTable"></table></div>
+  </section>
+</div>
+
+<!-- ============================================================== ASSETS -->
+<div id="page-assets" class="hidden">
+  <section class="card">
+    <div class="row">
+      <input type="text" id="assetQ" placeholder="Search assets…" style="min-width:260px">
+      <select id="assetType"><option value="">All types</option><option value="api">APIs</option><option value="mcp">MCP servers</option><option value="agent">Agents</option></select>
+      <label><input type="checkbox" id="assetGap"> Catalog gaps only</label>
+      <div class="spacer"></div><span class="muted" id="assetCount"></span>
+    </div>
+  </section>
+  <div class="split">
+    <section class="card"><div class="scroll"><table class="grid" id="assetTable"></table></div></section>
+    <section class="card" id="assetDetail"><p class="muted">Select an asset to see its capabilities and overlaps.</p></section>
+  </div>
+</div>
+
+<!-- ============================================================== SPRAWL -->
+<div id="page-sprawl" class="hidden">
+  <div class="kpis" id="kpis"></div>
+  <section class="card">
+    <h2>Does this already exist?</h2>
+    <p class="muted" style="margin-top:-6px">Describe a capability you're about to build; get the closest existing ones.</p>
+    <textarea id="findText" placeholder="e.g. Create a ServiceNow incident for an employee"></textarea>
+    <div class="row" style="margin-top:8px"><button class="primary" id="findBtn">Find</button><span class="muted" id="findMsg"></span></div>
+    <div id="findResults" style="margin-top:10px"></div>
+  </section>
+  <section class="card"><h2>Recommendations</h2><ul class="recs" id="recs"></ul></section>
+  <section class="card"><h2>Asset overlap</h2><div class="scroll" id="heatmap"></div></section>
+  <section class="card"><h2 id="clustersTitle">Redundancy clusters</h2><div id="clusters"></div></section>
+  <section class="card">
+    <div class="row"><h2 style="margin:0">Gray areas</h2>
+      <select id="verdictFilter"><option value="">All verdicts</option><option value="duplicate">duplicate</option><option value="overlap">overlap</option><option value="distinct">distinct</option></select>
+    </div>
+    <div class="scroll" style="margin-top:10px"><table class="grid" id="grayTable"></table></div>
+  </section>
+</div>
+</main>
+<div id="tip" role="tooltip"></div>
+</div>
+
+<script>
+const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STATUS = {
+  unique: ["✓", "Unique", "var(--good)"], gray: ["◐", "Gray area", "var(--warning)"],
+  redundant: ["⧉", "Redundant", "var(--serious)"], gap: ["!", "Catalog gap", "var(--critical)"],
+  "likely-new": ["✓", "Likely new", "var(--good)"],
+};
+const badge = (s) => { const [i, l, c] = STATUS[s] || ["?", s, "var(--text-muted)"];
+  return `<span class="badge"><span class="dot" style="background:${c}${s === "gap" ? ";color:#fff" : ""}">${i}</span>${l}</span>`; };
+const REL = { "facade": "Facade (expected)", "agent-tool": "Agent uses tool (expected)", "api-led-layer": "API-led layer (expected)" };
+const relLabel = (r) => r ? `<span class="badge"><span class="dot" style="background:var(--text-muted);color:#fff">=</span>${REL[r] || r}</span>` : "";
+const RAMP = ["#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281"];
+
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { message: text }; }
+  if (!r.ok) throw Object.assign(new Error((body && body.message) || r.statusText), { status: r.status });
+  return body;
+}
+
+// ------------------------------------------------------------- navigation
+const pages = ["scan", "assets", "sprawl"];
+function show(page) {
+  pages.forEach((p) => $("#page-" + p).classList.toggle("hidden", p !== page));
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-current", b.dataset.page === page ? "page" : "false"));
+  if (page === "assets") loadAssets();
+  if (page === "sprawl") loadSprawl();
+  history.replaceState(null, "", "#" + page);
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.page)));
+$("#themeBtn").addEventListener("click", () => { const r = document.documentElement;
+  const dark = r.dataset.theme === "dark" || (!r.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  r.dataset.theme = dark ? "light" : "dark"; });
+
+const tip = $("#tip");
+document.addEventListener("mousemove", (e) => { const el = e.target.closest("[data-tip]");
+  if (!el) { tip.style.display = "none"; return; }
+  tip.textContent = el.dataset.tip; tip.style.display = "block";
+  tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px"; });
+
+// ------------------------------------------------------------------- scan
+let polling = null;
+$("#startBtn").addEventListener("click", async () => {
+  $("#scanMsg").textContent = "";
+  const types = [...document.querySelectorAll("input[name=types]:checked")].map((i) => i.value);
+  const body = { types, liveMcp: $("#liveMcp").checked, judge: $("#judge").checked };
+  if ($("#judgeModel").value) body.judgeModel = $("#judgeModel").value;
+  try {
+    const scan = await api("/scans", { method: "POST", body: JSON.stringify(body) });
+    track(scan.scanId);
+  } catch (e) { $("#scanMsg").textContent = e.message; }
+});
+
+function track(id) {
+  clearInterval(polling);
+  $("#startBtn").disabled = true;
+  $("#scanStatus").classList.remove("hidden");
+  const started = Date.now();
+  const tick = async () => {
+    try {
+      const s = await api("/scans/" + id);
+      const p = s.progress || {};
+      const pct = p.total ? Math.round(100 * p.done / p.total) : (s.status === "completed" ? 100 : 0);
+      $("#statusText").textContent = s.status === "running" ? `Running: ${s.phase || "starting"}` : s.status;
+      $("#statusSub").textContent = `scan ${id.slice(0, 8)} · ${Math.round((Date.now() - started) / 1000)}s`;
+      $("#meterBar").style.width = pct + "%";
+      $("#meterText").textContent = p.total ? `${p.done} / ${p.total}` : "";
+      if (s.status === "completed" || s.status === "failed") {
+        clearInterval(polling); polling = null; $("#startBtn").disabled = false;
+        if (s.status === "failed") $("#scanMsg").textContent = s.error || "Scan failed";
+        else $("#statusSub").textContent += ` · ${s.counts.assets} assets, ${s.counts.capabilities} capabilities`;
+        loadHistory(); refreshLatest();
+      }
+    } catch (e) { $("#scanMsg").textContent = e.message; }
+  };
+  tick(); polling = setInterval(tick, 2000);
+}
+
+async function loadHistory() {
+  try {
+    const rows = await api("/scans?limit=50");
+    const running = rows.find((r) => r.status === "running" || r.status === "queued");
+    if (running && !polling) track(running.scanId);
+    $("#histTable").innerHTML = `<thead><tr><th>Started</th><th>Status</th><th class="num">Assets</th><th class="num">Capabilities</th>
+      <th class="num">Redundant</th><th class="num">Gray</th><th class="num">Gaps</th><th class="num">Duration</th><th>Judge model</th></tr></thead><tbody>` +
+      (rows.map((r) => `<tr><td>${esc(new Date(r.createdAt).toLocaleString())}</td><td>${esc(r.status)}${r.error ? ` <span class="err" title="${esc(r.error)}">⚠</span>` : ""}</td>
+        <td class="num">${r.counts?.assets ?? ""}</td><td class="num">${r.counts?.capabilities ?? ""}</td>
+        <td class="num">${r.counts?.redundant ?? ""}</td><td class="num">${r.counts?.gray ?? ""}</td><td class="num">${r.counts?.undocumented ?? ""}</td>
+        <td class="num">${r.durationSeconds != null ? r.durationSeconds + "s" : ""}</td><td><code>${esc(r.judgeModel || "")}</code></td></tr>`).join("")
+       || `<tr><td colspan="9" class="muted">No scans yet. Start one above.</td></tr>`) + "</tbody>";
+  } catch (e) { $("#histTable").innerHTML = `<tr><td class="err">${esc(e.message)}</td></tr>`; }
+}
+$("#refreshHist").addEventListener("click", loadHistory);
+
+async function refreshLatest() {
+  try { const s = await api("/sprawl"); $("#latestInfo").textContent = `Latest scan: ${new Date(s.generatedAt).toLocaleString()}`; }
+  catch { $("#latestInfo").textContent = "No completed scan yet"; }
+}
+
+// ----------------------------------------------------------------- assets
+let assets = [];
+async function loadAssets() {
+  try { assets = await api("/assets"); renderAssets(); }
+  catch (e) { $("#assetTable").innerHTML = `<tr><td class="${e.status === 404 ? "muted" : "err"}">${esc(e.message)}</td></tr>`; }
+}
+function renderAssets() {
+  const q = $("#assetQ").value.toLowerCase(), t = $("#assetType").value, g = $("#assetGap").checked;
+  const rows = assets.filter((a) => (!t || a.type === t) && (!g || a.gap)
+    && (!q || (a.name || "").toLowerCase().includes(q) || (a.assetId || "").toLowerCase().includes(q)));
+  $("#assetCount").textContent = `${rows.length} of ${assets.length} assets`;
+  $("#assetTable").innerHTML = `<thead><tr><th>Asset</th><th>Type</th><th class="num">Capabilities</th><th>Source</th>
+    <th class="num">Redundant</th><th class="num">Gray</th><th>Status</th></tr></thead><tbody>` +
+    rows.map((a) => `<tr class="click" data-id="${esc(a.assetId)}"><td><b>${esc(a.name)}</b><br><span class="muted">${esc(a.exchangeType)} · v${esc(a.version)}</span></td>
+      <td>${esc(a.type)}</td><td class="num">${a.capabilityCount}</td><td><code>${esc(a.capabilitySource)}</code></td>
+      <td class="num">${a.redundantCount || ""}</td><td class="num">${a.grayCount || ""}</td>
+      <td>${a.gap ? badge("gap") : a.redundantCount ? badge("redundant") : a.grayCount ? badge("gray") : a.capabilityCount ? badge("unique") : '<span class="muted">n/a</span>'}</td></tr>`).join("") + "</tbody>";
+}
+["#assetQ", "#assetType", "#assetGap"].forEach((s) => $(s).addEventListener("input", renderAssets));
+$("#assetTable").addEventListener("click", async (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  $("#assetDetail").innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const a = await api("/assets/" + encodeURIComponent(tr.dataset.id));
+    $("#assetDetail").innerHTML = `<h2>${esc(a.name)}</h2><p class="muted">${esc(a.exchangeType)} · ${esc(a.exchangeAssetId)} v${esc(a.version)} · source <code>${esc(a.capabilitySource)}</code></p>
+      ${a.note ? `<p class="muted">${esc(a.note)}</p>` : ""}
+      <h2 style="margin-top:14px">Capabilities (${a.capabilities.length})</h2>
+      <table class="grid"><thead><tr><th>Name</th><th>Status</th><th>Description</th></tr></thead><tbody>
+      ${a.capabilities.map((c) => `<tr><td><code>${esc(c.name)}</code></td><td>${badge(c.status)}</td><td class="desc">${esc(c.description.slice(0, 200))}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">None</td></tr>'}
+      </tbody></table>
+      <h2 style="margin-top:14px">Overlaps with other assets</h2>
+      <table class="grid"><thead><tr><th>Covered asset</th><th>By</th><th class="num">Redundant</th><th class="num">Gray</th><th class="num">Coverage</th><th>Relationship</th></tr></thead><tbody>
+      ${a.overlaps.map((o) => `<tr${o.relationship ? ' class="muted"' : ""}><td>${esc(o.source)}</td><td>${esc(o.target)}</td><td class="num">${o.redundant}/${o.total}</td><td class="num">${o.gray}</td><td class="num">${Math.round(o.coverage * 100)}%</td><td>${o.relationship ? relLabel(o.relationship) : "Possible sprawl"}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">No overlap</td></tr>'}
+      </tbody></table>`;
+  } catch (err) { $("#assetDetail").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+});
+
+// ----------------------------------------------------------------- sprawl
+async function loadSprawl() {
+  let s;
+  try { s = await api("/sprawl"); } catch (e) {
+    $("#kpis").innerHTML = `<p class="${e.status === 404 ? "muted" : "err"}">${esc(e.message)}</p>`; return; }
+  const c = s.counts;
+  $("#kpis").innerHTML = [["Assets", c.assets, ""], ["Capabilities", c.capabilities, ""],
+    ["Redundant", c.redundant, badge("redundant")], ["Gray area", c.gray, badge("gray")],
+    ["Unique", c.unique, badge("unique")], ["Undocumented", c.undocumented, badge("gap")]]
+    .map(([l, v, b]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div>${b}</div>`).join("")
+    + `<div class="muted" style="grid-column:1/-1">Embedding model <code>${esc(s.embeddingModel)}</code> · judge model <code>${esc(s.judgeModel || "off")}</code>
+       (${c.grayJudged} gray pairs judged${c.grayJudgeFailed ? `, ${c.grayJudgeFailed} failed` : ""}) · thresholds: redundant ≥ ${s.thresholds.redundant}, gray ≥ ${s.thresholds.gray}
+       · scanned ${new Date(s.generatedAt).toLocaleString()}</div>`;
+  $("#recs").innerHTML = s.recommendations.map((r) => `<li>${esc(r)}</li>`).join("") || '<li class="muted">No consolidation candidates.</li>';
+  heatmap(s.overlapMatrix);
+  loadClusters(); loadGray();
+}
+
+function heatmap(overlaps) {
+  const score = {}; overlaps.forEach((o) => { score[o.source] = (score[o.source] || 0) + o.coverage; score[o.target] = (score[o.target] || 0) + o.coverage; });
+  const assetsIn = Object.keys(score).sort((a, b) => score[b] - score[a]).slice(0, 30);
+  if (!assetsIn.length) { $("#heatmap").innerHTML = '<p class="muted">No cross-asset overlap.</p>'; return; }
+  const cov = {}; overlaps.forEach((o) => cov[o.source + "\u0000" + o.target] = o);
+  const short = (a, n) => a.length <= n ? a : a.slice(0, n - 1) + "…";
+  let h = `<table class="heat"><thead><tr><th class="muted">covered ↓ / by →</th>` +
+    assetsIn.map((a) => `<th title="${esc(a)}"><span class="vert">${esc(short(a, 26))}</span></th>`).join("") + "</tr></thead><tbody>";
+  for (const src of assetsIn) {
+    h += `<tr><th title="${esc(src)}">${esc(short(src, 34))}</th>`;
+    for (const tgt of assetsIn) {
+      if (src === tgt) { h += '<td class="self">—</td>'; continue; }
+      const o = cov[src + "\u0000" + tgt], c = o ? o.coverage : 0;
+      const step = c > 0 ? Math.min(RAMP.length - 1, Math.round(c * (RAMP.length - 1))) : -1;
+      const expected = o && o.relationship;
+      const bg = expected ? "var(--track)" : step < 0 ? "transparent" : RAMP[step], fg = expected ? "var(--text-muted)" : step >= 6 ? "#fff" : "#0b0b0b";
+      const t = o ? `${src} → ${tgt}: ${o.redundant}/${o.total} redundant, ${o.gray} gray` + (expected ? ` · ${REL[o.relationship]}` : "") : `${src} → ${tgt}: no overlap`;
+      h += `<td class="cell" style="background:${bg};color:${fg}" data-tip="${esc(t)}">${o && o.redundant ? Math.round(c * 100) + "%" : o ? "·" : ""}</td>`;
+    }
+    h += "</tr>";
+  }
+  $("#heatmap").innerHTML = h + `</tbody></table><p class="muted" style="font-size:12px">Cell = share of the row asset's capabilities that already exist in the column asset.
+    <span class="ramp">${RAMP.map((c) => `<i style="background:${c}"></i>`).join("")}</span> 0% → 100% · "·" = gray overlap only · <span class="ramp"><i style="background:var(--track)"></i></span> expected by design (facade, agent tool, API-led layer). Hover for counts.</p>`;
+}
+
+async function loadClusters() {
+  const cs = await api("/sprawl/clusters?limit=200");
+  $("#clustersTitle").textContent = `Redundancy clusters (${cs.length})`;
+  $("#clusters").innerHTML = cs.map((c, n) => {
+    const assetsIn = [...new Set(c.members.map((m) => m.asset))];
+    return `<details ${n < 5 ? "open" : ""}><summary><b>Cluster ${n + 1}</b>: ${c.members.length} implementations across ${assetsIn.length} assets ·
+      mean similarity ${c.meanScore.toFixed(2)} · keep <code>${esc(c.canonical.split(":").slice(1).join(" / "))}</code></summary>
+      <table class="grid"><thead><tr><th>Capability</th><th>Asset</th><th>Type</th><th>Description</th></tr></thead><tbody>` +
+      c.members.map((m) => `<tr><td>${m.id === c.canonical ? "★ " : ""}<code>${esc(m.name)}</code></td><td>${esc(m.asset)}</td><td>${esc(m.type)}</td>
+        <td class="desc">${esc(m.description.slice(0, 200))}</td></tr>`).join("") + "</tbody></table></details>";
+  }).join("") || '<p class="muted">None.</p>';
+}
+
+async function loadGray() {
+  const v = $("#verdictFilter").value;
+  const ps = await api("/sprawl/gray-pairs?limit=500" + (v ? "&verdict=" + v : ""));
+  $("#grayTable").innerHTML = `<thead><tr><th class="num">Score</th><th>Capability A</th><th>Capability B</th><th>Verdict</th><th>Rationale</th></tr></thead><tbody>` +
+    (ps.map((p) => `<tr><td class="num">${p.score.toFixed(2)}</td>
+      <td><code>${esc(p.a.name)}</code><br><span class="muted">${esc(p.a.asset)}</span></td>
+      <td><code>${esc(p.b.name)}</code><br><span class="muted">${esc(p.b.asset)}</span></td>
+      <td>${esc(p.verdict || "—")}</td><td class="desc">${esc(p.rationale || "")}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">None.</td></tr>') + "</tbody>";
+}
+$("#verdictFilter").addEventListener("change", loadGray);
+
+$("#findBtn").addEventListener("click", async () => {
+  const d = $("#findText").value.trim(); if (d.length < 3) return;
+  $("#findMsg").textContent = "Searching…"; $("#findResults").innerHTML = "";
+  try {
+    const ms = await api("/sprawl/find", { method: "POST", body: JSON.stringify({ description: d, topK: 8 }) });
+    $("#findMsg").textContent = "";
+    $("#findResults").innerHTML = `<table class="grid"><thead><tr><th class="num">Score</th><th>Verdict</th><th>Existing capability</th><th>Asset</th><th>Description</th></tr></thead><tbody>` +
+      ms.map((m) => `<tr><td class="num">${m.score.toFixed(3)}</td><td>${badge(m.verdict)}</td><td><code>${esc(m.capability.name)}</code></td>
+        <td>${esc(m.capability.asset)} <span class="muted">(${esc(m.capability.type)})</span></td><td class="desc">${esc(m.capability.description.slice(0, 180))}</td></tr>`).join("") + "</tbody></table>";
+  } catch (e) { $("#findMsg").textContent = e.message; }
+});
+
+// ------------------------------------------------------------------- boot
+loadHistory(); refreshLatest();
+const start = (location.hash || "#scan").slice(1);
+if (pages.includes(start)) show(start);
+</script>
+</body>
+</html>

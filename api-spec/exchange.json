@@ -1,0 +1,12 @@
+{
+  "main": "sprawl-scanner-api.yaml",
+  "name": "Sprawl Scanner API",
+  "classifier": "oas",
+  "organizationId": "fa76c43c-f6d0-41fd-bdcd-214ccae74d41",
+  "descriptorVersion": "1.0.0",
+  "groupId": "fa76c43c-f6d0-41fd-bdcd-214ccae74d41",
+  "assetId": "sprawl-scanner-api",
+  "version": "1.0.0",
+  "tags": [],
+  "apiVersion": "v1"
+}
