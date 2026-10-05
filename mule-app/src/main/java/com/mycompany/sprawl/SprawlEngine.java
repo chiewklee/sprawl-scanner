@@ -301,7 +301,7 @@ public final class SprawlEngine {
         }
         long distinctAssets = an.caps.stream().map(c -> c.asset).distinct().count();
         ObjectNode cn = r.putObject("counts");
-        cn.put("assets", distinctAssets).put("capabilities", an.caps.size()).put("unique", counts[0])
+        cn.put("assets", distinctAssets).put("catalogAssets", assets.size()).put("capabilities", an.caps.size()).put("unique", counts[0])
                 .put("gray", counts[1]).put("redundant", counts[2]).put("clusters", an.clusters.size())
                 .put("undocumented", undocumented).put("grayJudged", judgeStats[0]).put("grayJudgeFailed", judgeStats[1]);
 

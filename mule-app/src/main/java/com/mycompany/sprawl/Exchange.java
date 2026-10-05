@@ -445,14 +445,14 @@ final class Exchange {
             if (doc instanceof Map<?, ?> m) {
                 walkRaml((Map<Object, Object>) m, "", info, src);
             }
-            info.capabilitySource = "raml";
-            return info.caps.size() > before;
+            return found(info, before, "raml");
         }
         Object docObj = load(text);
         if (!(docObj instanceof Map<?, ?> raw)) {
             return false;
         }
         Map<String, Object> doc = (Map<String, Object>) raw;
+        String label;
         if (doc.containsKey("openapi") || doc.containsKey("swagger")) {
             Object paths = doc.get("paths");
             if (paths instanceof Map<?, ?> pm) {
@@ -471,26 +471,36 @@ final class Exchange {
                     }
                 }
             }
-            info.capabilitySource = "oas";
+            label = "oas";
         } else if (doc.get("tools") instanceof List<?> tools) { // Exchange MCP asset descriptor
             for (Object t : tools) {
                 if (t instanceof Map<?, ?> tm && tm.get("name") != null) {
                     info.caps.add(new Cap(info.name, info.assetId, "mcp", str(tm.get("name")), str(tm.get("description")), src));
                 }
             }
-            info.capabilitySource = "mcp-metadata";
+            label = "mcp-metadata";
         } else if (doc.get("skills") instanceof List<?>) { // A2A agent card
             skills(doc, info.name, info.assetId, info, src);
-            info.capabilitySource = "agent-network";
+            label = "agent-network";
         } else { // agent network: every card under brokers/agents is its own agent asset
             for (Map<String, Object> card : cards(doc)) {
                 String cardName = card.get("name") == null ? info.name : str(card.get("name"));
                 skills(card, cardName, info.assetId + ":" + slug(cardName), info, src);
             }
-            info.capabilitySource = "agent-network";
+            label = "agent-network";
         }
-        return info.caps.size() > before;
+        return found(info, before, label);
     }
+
+    /** Records where capabilities came from, but only if this document produced some. */
+    private static boolean found(AssetInfo info, int before, String label) {
+        if (info.caps.size() > before) {
+            info.capabilitySource = label;
+            return true;
+        }
+        return false;
+    }
+
 
     @SuppressWarnings("unchecked")
     private static void walkRaml(Map<Object, Object> node, String prefix, AssetInfo info, String src) {

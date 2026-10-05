@@ -39,7 +39,7 @@ nav button { background: none; border: 0; padding: 8px 14px; border-radius: 6px;
   color: var(--text-secondary); font: inherit; }
 nav button[aria-current="page"] { background: var(--surface-0); color: var(--text-primary); font-weight: 600; }
 .spacer { flex: 1; }
-main { padding: 20px 28px 60px; max-width: 1500px; }
+main { padding: 20px 28px 60px; }
 section.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
   padding: 16px 20px; margin: 0 0 16px; }
 h2 { font-size: 16px; margin: 0 0 12px; }
@@ -86,6 +86,12 @@ ul.recs { margin: 0; padding-left: 20px; } ul.recs li { margin: 5px 0; }
   box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 20; }
 .split { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .hidden { display: none !important; }
+.tabs { display: inline-flex; gap: 4px; background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+.tabs button { border: 0; background: none; padding: 6px 12px; border-radius: 6px; font: inherit; color: var(--text-secondary); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--surface-1); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.grid tr.group td { background: var(--surface-0); color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.asset-split .scroll { max-height: none; overflow: visible; }
+#assetDetail { position: sticky; top: 72px; max-height: calc(100vh - 90px); overflow: auto; }
 </style>
 </head>
 <body>
@@ -146,12 +152,12 @@ ul.recs { margin: 0; padding-left: 20px; } ul.recs li { margin: 5px 0; }
   <section class="card">
     <div class="row">
       <input type="text" id="assetQ" placeholder="Search assets…" style="min-width:260px">
-      <select id="assetType"><option value="">All types</option><option value="api">APIs</option><option value="mcp">MCP servers</option><option value="agent">Agents</option></select>
+      <div class="tabs" id="assetType" role="group" aria-label="Asset type"></div>
       <label><input type="checkbox" id="assetGap"> Catalog gaps only</label>
       <div class="spacer"></div><span class="muted" id="assetCount"></span>
     </div>
   </section>
-  <div class="split">
+  <div class="split asset-split">
     <section class="card"><div class="scroll"><table class="grid" id="assetTable"></table></div></section>
     <section class="card" id="assetDetail"><p class="muted">Select an asset to see its capabilities and overlaps.</p></section>
   </div>
@@ -292,25 +298,31 @@ async function loadAssets() {
 }
 const TYPE_ORDER = { api: 0, mcp: 1, agent: 2 };
 const TYPE_LABEL = { api: "APIs", mcp: "MCP servers", agent: "Agents" };
+let assetTypeFilter = "";
 function renderAssets() {
-  const q = $("#assetQ").value.toLowerCase(), t = $("#assetType").value, g = $("#assetGap").checked;
-  // type filter shows counts, so all types are visible at a glance
+  const q = $("#assetQ").value.toLowerCase(), t = assetTypeFilter, g = $("#assetGap").checked;
   const counts = {}; assets.forEach((a) => counts[a.type] = (counts[a.type] || 0) + 1);
-  $("#assetType").innerHTML = `<option value="">All types (${assets.length})</option>` +
-    Object.keys(TYPE_ORDER).map((k) => `<option value="${k}"${k === t ? " selected" : ""}>${TYPE_LABEL[k]} (${counts[k] || 0})</option>`).join("");
+  $("#assetType").innerHTML = [["", `All (${assets.length})`], ...Object.keys(TYPE_ORDER).map((k) => [k, `${TYPE_LABEL[k]} (${counts[k] || 0})`])]
+    .map(([k, l]) => `<button data-type="${k}" aria-pressed="${k === t}">${l}</button>`).join("");
   const rows = assets.filter((a) => (!t || a.type === t) && (!g || a.gap)
     && (!q || (a.name || "").toLowerCase().includes(q) || (a.assetId || "").toLowerCase().includes(q)))
     .sort((x, y) => (TYPE_ORDER[x.type] ?? 9) - (TYPE_ORDER[y.type] ?? 9) || (x.name || "").localeCompare(y.name || ""));
   $("#assetCount").textContent = `${rows.length} of ${assets.length} assets`;
+  const shown = {}; rows.forEach((a) => shown[a.type] = (shown[a.type] || 0) + 1);
+  let lastType = null;
   $("#assetTable").innerHTML = `<thead><tr><th>Asset</th><th>Type</th><th class="num">Capabilities</th><th>Source</th>
     <th class="num">Redundant</th><th class="num">Gray</th><th>Status</th></tr></thead><tbody>` +
-    rows.map((a) => `<tr class="click" data-id="${esc(a.assetId)}"><td><b>${esc(a.name)}</b><br><span class="muted">${esc(a.exchangeType)} · v${esc(a.version)}</span></td>
+    rows.map((a) => {
+      const head = !t && a.type !== lastType ? `<tr class="group"><td colspan="7">${TYPE_LABEL[a.type] || a.type} (${shown[a.type]})</td></tr>` : "";
+      lastType = a.type;
+      return head + `<tr class="click" data-id="${esc(a.assetId)}"><td><b>${esc(a.name)}</b><br><span class="muted">${esc(a.exchangeType)} · v${esc(a.version)}</span></td>
       <td>${esc(a.type)}</td><td class="num">${a.capabilityCount}</td><td><code>${esc(a.capabilitySource)}</code></td>
       <td class="num">${a.redundantCount || ""}</td><td class="num">${a.grayCount || ""}</td>
-      <td>${a.gap ? badge("gap") : a.redundantCount ? badge("redundant") : a.grayCount ? badge("gray") : a.capabilityCount ? badge("unique") : '<span class="muted">n/a</span>'}</td></tr>`).join("") + "</tbody>";
+      <td>${a.gap ? badge("gap") : a.redundantCount ? badge("redundant") : a.grayCount ? badge("gray") : a.capabilityCount ? badge("unique") : '<span class="muted">n/a</span>'}</td></tr>`;
+    }).join("") + "</tbody>";
 }
 ["#assetQ", "#assetGap"].forEach((s) => $(s).addEventListener("input", renderAssets));
-$("#assetType").addEventListener("change", renderAssets);
+$("#assetType").addEventListener("click", (e) => { const b = e.target.closest("button[data-type]"); if (!b) return; assetTypeFilter = b.dataset.type; renderAssets(); });
 $("#assetTable").addEventListener("click", async (e) => {
   const tr = e.target.closest("tr[data-id]"); if (!tr) return;
   $("#assetDetail").innerHTML = '<p class="muted">Loading…</p>';
@@ -335,7 +347,7 @@ async function loadSprawl() {
   try { s = await api("/sprawl"); } catch (e) {
     $("#kpis").innerHTML = `<p class="${e.status === 404 ? "muted" : "err"}">${esc(e.message)}</p>`; return; }
   const c = s.counts;
-  $("#kpis").innerHTML = [["Assets", c.assets, ""], ["Capabilities", c.capabilities, ""],
+  $("#kpis").innerHTML = [["Assets analysed", c.assets, c.catalogAssets ? `<span class="muted" style="font-size:12px">of ${c.catalogAssets} in catalog</span>` : ""], ["Capabilities", c.capabilities, ""],
     ["Redundant", c.redundant, badge("redundant")], ["Gray area", c.gray, badge("gray")],
     ["Unique", c.unique, badge("unique")], ["Undocumented", c.undocumented, badge("gap")]]
     .map(([l, v, b]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div>${b}</div>`).join("")
