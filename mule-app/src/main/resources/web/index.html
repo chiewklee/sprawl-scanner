@@ -116,7 +116,7 @@ ul.recs { margin: 0; padding-left: 20px; } ul.recs li { margin: 5px 0; }
       <label><input type="checkbox" name="types" value="agent-network" checked> Agent networks</label>
     </div>
     <div class="row" style="margin-top:10px">
-      <label title="Read tools/list from running MCP servers that Exchange doesn't describe"><input type="checkbox" id="liveMcp" checked> Live MCP tool lists</label>
+      <label title="When Exchange has no tool list / agent card, read it from the running MCP server or agent"><input type="checkbox" id="liveMcp" checked> Live tool lists &amp; agent cards</label>
       <label><input type="checkbox" id="judge" checked> Judge gray pairs</label>
       <label>Judge model
         <select id="judgeModel">
@@ -290,10 +290,17 @@ async function loadAssets() {
   try { assets = await api("/assets"); renderAssets(); }
   catch (e) { $("#assetTable").innerHTML = `<tr><td class="${e.status === 404 ? "muted" : "err"}">${esc(e.message)}</td></tr>`; }
 }
+const TYPE_ORDER = { api: 0, mcp: 1, agent: 2 };
+const TYPE_LABEL = { api: "APIs", mcp: "MCP servers", agent: "Agents" };
 function renderAssets() {
   const q = $("#assetQ").value.toLowerCase(), t = $("#assetType").value, g = $("#assetGap").checked;
+  // type filter shows counts, so all types are visible at a glance
+  const counts = {}; assets.forEach((a) => counts[a.type] = (counts[a.type] || 0) + 1);
+  $("#assetType").innerHTML = `<option value="">All types (${assets.length})</option>` +
+    Object.keys(TYPE_ORDER).map((k) => `<option value="${k}"${k === t ? " selected" : ""}>${TYPE_LABEL[k]} (${counts[k] || 0})</option>`).join("");
   const rows = assets.filter((a) => (!t || a.type === t) && (!g || a.gap)
-    && (!q || (a.name || "").toLowerCase().includes(q) || (a.assetId || "").toLowerCase().includes(q)));
+    && (!q || (a.name || "").toLowerCase().includes(q) || (a.assetId || "").toLowerCase().includes(q)))
+    .sort((x, y) => (TYPE_ORDER[x.type] ?? 9) - (TYPE_ORDER[y.type] ?? 9) || (x.name || "").localeCompare(y.name || ""));
   $("#assetCount").textContent = `${rows.length} of ${assets.length} assets`;
   $("#assetTable").innerHTML = `<thead><tr><th>Asset</th><th>Type</th><th class="num">Capabilities</th><th>Source</th>
     <th class="num">Redundant</th><th class="num">Gray</th><th>Status</th></tr></thead><tbody>` +
@@ -302,7 +309,8 @@ function renderAssets() {
       <td class="num">${a.redundantCount || ""}</td><td class="num">${a.grayCount || ""}</td>
       <td>${a.gap ? badge("gap") : a.redundantCount ? badge("redundant") : a.grayCount ? badge("gray") : a.capabilityCount ? badge("unique") : '<span class="muted">n/a</span>'}</td></tr>`).join("") + "</tbody>";
 }
-["#assetQ", "#assetType", "#assetGap"].forEach((s) => $(s).addEventListener("input", renderAssets));
+["#assetQ", "#assetGap"].forEach((s) => $(s).addEventListener("input", renderAssets));
+$("#assetType").addEventListener("change", renderAssets);
 $("#assetTable").addEventListener("click", async (e) => {
   const tr = e.target.closest("tr[data-id]"); if (!tr) return;
   $("#assetDetail").innerHTML = '<p class="muted">Loading…</p>';

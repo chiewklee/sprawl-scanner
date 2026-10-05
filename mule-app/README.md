@@ -39,7 +39,7 @@ A scan runs five steps. Each step has a clear place to change its behaviour.
 |---|---|---|
 | REST/HTTP API | one operation (`GET /orders/{id}` or its `operationId`) | OAS or RAML spec in Exchange |
 | MCP server | one tool | `mcp-metadata` in Exchange, else **live** `tools/list` via the upstream URL in API Manager |
-| Agent | one skill | the agent card inside its `agent-network` asset |
+| Agent | one skill | the agent card inside its `agent-network` asset (brokers), else **live** from the running agent's A2A card (`/.well-known/agent-card.json`) via its upstream URL in API Manager |
 
 The text compared is `humanised name + ". " + description` (for example
 `getAccountById` becomes `get account by id. Retrieve a Salesforce account…`). Descriptions
@@ -140,6 +140,10 @@ Properties** on the deployment, never in files. See the repo root README for the
 three ways to set them (Runtime Manager UI, `scripts/set_secure_properties.py`, local `-M-D`).
 
 ## Redeploying a code change
+
+Before building from the repo, set your own values: `-Dch2.target=<your private space>` on the
+Maven command, and the deployment property `mcpAuth.salesforce.tokenUrl` (Runtime Manager →
+Properties) if you use the Salesforce MCP auth. The repo ships placeholders for both.
 
 The MCP deploy tool only creates deployments. To update in place (keeps secrets/settings):
 1. `mvn -B clean package -DskipTests` with JDK 17.

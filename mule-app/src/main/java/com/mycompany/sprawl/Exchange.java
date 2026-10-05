@@ -199,14 +199,26 @@ final class Exchange {
                 liveReason = r;
             }
         }
+        if (info.caps.isEmpty() && "agent".equals(info.exchangeType) && liveMcp && detail != null) {
+            String r = liveAgentCard(info, detail, src);
+            if (!info.caps.isEmpty()) {
+                info.capabilitySource = "live-agent-card";
+                info.note = "skills not in Exchange; read the A2A agent card live from " + r;
+            } else {
+                liveReason = r;
+            }
+        }
         if (info.caps.isEmpty()) {
             String desc = a.path("description").asText("").strip();
             if (!desc.isEmpty()) {
                 info.caps.add(new Cap(info.name, info.assetId, info.type, info.name, desc, src));
                 info.capabilitySource = "description";
                 info.note = "no parsable spec; used asset description";
+            } else if ("agent".equals(info.exchangeType) && liveReason.isEmpty() && !liveMcp) {
+                info.note = "agent stub: skills come from its agent network (live agent cards off)";
             } else if ("agent".equals(info.exchangeType)) {
-                info.note = "agent stub: skills come from its agent network";
+                info.gap = true; // no skills in Exchange, its network or a live agent card
+                info.note = "no skills in Exchange or its agent network (live: " + (liveReason.isEmpty() ? "not tried" : liveReason) + ")";
             } else {
                 info.gap = true;
                 info.note = "no spec and no description" + (liveReason.isEmpty() ? "" : " (live: " + liveReason + ")");
@@ -302,7 +314,58 @@ final class Exchange {
                     }
                 }
             } catch (Exception e) {
-                reasons.add("tools/list failed: " + Http.trunc(String.valueOf(e.getMessage()), 80));
+                reasons.add("tools/list failed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : Http.trunc(e.getMessage(), 80)));
+            }
+        }
+        return reasons.isEmpty() ? "no running instance" : String.join("; ", reasons);
+    }
+
+    /** Agent assets whose skills aren't in Exchange (sub-agents of a network are just a label
+     *  there): fetch the running agent's A2A card via its upstream URL in API Manager. */
+    private String liveAgentCard(AssetInfo info, JsonNode detail, String src) {
+        String orgId = detail.path("organizationId").asText(detail.path("groupId").asText());
+        List<String> reasons = new ArrayList<>();
+        for (JsonNode inst : detail.path("instances")) {
+            String env = inst.path("environmentId").asText(""), apiId = inst.path("id").asText("");
+            if (env.isEmpty() || apiId.isEmpty()) {
+                continue;
+            }
+            try {
+                HttpResponse<byte[]> r = Http.get(http, base + "/apimanager/api/v1/organizations/" + orgId
+                        + "/environments/" + env + "/apis/" + apiId, auth(), 30);
+                if (r.statusCode() != 200) {
+                    reasons.add("API Manager HTTP " + r.statusCode());
+                    continue;
+                }
+                String upstream = Http.json(r.body()).path("endpoint").path("uri").asText("").replaceAll("/+$", "");
+                if (upstream.isEmpty()) {
+                    reasons.add("no upstream URL");
+                    continue;
+                }
+                Map<String, String> headers = new LinkedHashMap<>();
+                String host = URI.create(upstream).getHost();
+                for (AuthRule rule : authRules) {
+                    if (host != null && rule.matches(host)) {
+                        headers.put("Authorization", "Bearer " + rule.token(http));
+                        break;
+                    }
+                }
+                for (String path : List.of("/.well-known/agent-card.json", "/.well-known/agent.json")) {
+                    HttpResponse<byte[]> card = Http.get(http, upstream + path, headers, 15);
+                    if (card.statusCode() != 200) {
+                        continue;
+                    }
+                    Object doc = load(new String(card.body(), java.nio.charset.StandardCharsets.UTF_8));
+                    if (doc instanceof Map<?, ?> m && m.get("skills") instanceof List<?>) {
+                        skills(m, info.name, info.assetId, info, upstream + path);
+                        if (!info.caps.isEmpty()) {
+                            return upstream + path;
+                        }
+                    }
+                }
+                reasons.add("no agent card with skills at " + upstream);
+            } catch (Exception e) {
+                reasons.add("agent card failed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : Http.trunc(e.getMessage(), 80)));
             }
         }
         return reasons.isEmpty() ? "no running instance" : String.join("; ", reasons);

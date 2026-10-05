@@ -257,8 +257,23 @@ public final class SprawlEngine {
 
         ArrayNode assets = r.putArray("assets");
         Set<String> listed = new HashSet<>();
+        // Agents can appear twice: the Exchange agent stub and its card inside an agent network.
+        // Keep one row per agent name: the one that carries the skills.
+        Set<String> agentNamesWithSkills = new HashSet<>();
+        for (Exchange.AssetInfo info : ing.assets) {
+            for (Cap c : info.caps) {
+                if ("agent".equals(c.type)) {
+                    agentNamesWithSkills.add(c.asset.toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        Set<String> listedAgentNames = new HashSet<>();
         int undocumented = 0;
         for (Exchange.AssetInfo info : ing.assets) {
+            if ("agent".equals(info.exchangeType) && info.caps.isEmpty()
+                    && agentNamesWithSkills.contains(info.name.toLowerCase(java.util.Locale.ROOT))) {
+                continue; // stub of an agent whose skills are listed from its network card
+            }
             Map<String, Cap> byKey = new LinkedHashMap<>();
             for (Cap c : info.caps) {
                 byKey.putIfAbsent(c.assetKey, c);
@@ -271,6 +286,9 @@ public final class SprawlEngine {
                 continue;
             }
             for (Cap c : byKey.values()) {
+                if ("agent".equals(c.type) && !listedAgentNames.add(c.asset.toLowerCase(java.util.Locale.ROOT))) {
+                    continue; // same agent already listed (stub with a live card + network card)
+                }
                 if (listed.add(c.assetKey)) {
                     assets.add(assetNode(info, c.assetKey, c.asset, c.type, perAsset.getOrDefault(c.assetKey, new int[3])));
                 }
