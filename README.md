@@ -91,6 +91,96 @@ from the environment (or user-only files under `~/.config/sprawl-scanner/`); see
 
 ---
 
-## Deploying the Mule app
-See [`mule-app/README.md`](mule-app/README.md): build with JDK 17, deploy to CloudHub 2.0,
-then set the secure properties with option A or B.
+## Deploy to your own environment
+
+Step by step, from a fresh clone to a first scan. About 30 minutes, plus CloudHub rollout time.
+
+### 0. Prerequisites
+| You need | Notes |
+|---|---|
+| Anypoint Platform org with **CloudHub 2.0** | a **private space** is recommended: the live MCP / agent-card fallback reads running servers' upstream URLs, which are usually private. A shared space works, but those assets show as catalog gaps. |
+| Mule runtime **4.12.x** (Edge) on that target | check Runtime Manager → your target → available runtimes |
+| **JDK 17** and **Maven 3.9+** | `JAVA_HOME` must point at JDK 17 |
+| A **Gemini API key** | Google AI Studio. Tier 1 or above recommended (the free tier rate-limits quickly) |
+| An Anypoint **Connected App for scanning** (client credentials) | scopes: **Exchange Viewer** and **API Manager: View APIs Configuration**. Becomes `anypoint.clientId` / `anypoint.clientSecret`. |
+| *(optional)* a Salesforce Connected App, client credentials, `mcp_api` scope | only to read tool lists from Salesforce platform MCP servers. Becomes `mcpAuth.salesforce.*` |
+
+### 1. Point the code at your org
+Your **Anypoint org ID** (Access Management → Organization) appears in five places.
+Replace it everywhere with:
+```bash
+NEW_ORG=<your-org-id>
+grep -rl fa76c43c-f6d0-41fd-bdcd-214ccae74d41 api-spec mule-app | xargs sed -i '' "s/fa76c43c-f6d0-41fd-bdcd-214ccae74d41/$NEW_ORG/g"   # macOS; on Linux drop the ''
+```
+(`mule-app/pom.xml`, the APIkit config in `sprawl-scanner-api-impl.xml`, `api-spec/exchange.json` ×2,
+`application.properties`.)
+
+### 2. Publish the API spec to your Exchange
+The app's build pulls the spec from **your** Exchange, so publish it first. Either:
+- **Code Builder / Studio:** open `api-spec/` → *Publish to Exchange* (asset `sprawl-scanner-api`,
+  version `1.0.0`, type REST API), or
+- **Anypoint CLI:** `anypoint-cli-v4 exchange:asset:upload --organization <org> sprawl-scanner-api/1.0.0 --name "Sprawl Scanner API" --type rest-api --files '{"oas.zip":"<zip of api-spec/>"}'`
+
+### 3. Let Maven read Exchange
+Add Exchange credentials to `~/.m2/settings.xml` (server id must be **`anypoint-exchange-v3`**,
+as in `pom.xml`). For a Connected App with Exchange access:
+```xml
+<server>
+  <id>anypoint-exchange-v3</id>
+  <username>~~~Client~~~</username>
+  <password>CLIENT_ID~?~CLIENT_SECRET</password>
+</server>
+```
+
+### 4. Build
+```bash
+cd mule-app
+JAVA_HOME=<path to JDK 17> mvn -B clean package -DskipTests -Dch2.target=<your-private-space-or-shared-space>
+# -> target/sprawl-scanner-api-impl-1.0.0-SNAPSHOT-mule-application.jar
+```
+
+### 5. Deploy to CloudHub 2.0
+**Runtime Manager UI (simplest):** *Deploy application* → upload the jar → target = your space,
+runtime **4.12.x**, 1 replica, **0.5 vCore** (scans hold embeddings in memory) → enable a public
+URL if you want the UI reachable → **Deploy**.
+
+**Or Maven:** the `<cloudhub2Deployment>` block in `mule-app/pom.xml` is ready. Add deployer
+Connected App credentials (Runtime Manager *Create/Manage Applications* scope) under
+`<connectedAppClientId>` / `<connectedAppClientSecret>` / `<connectedAppGrantType>client_credentials`
+(from `-D` properties, not literals) and run `mvn deploy -DmuleDeploy`.
+
+Leave **Object Store v2 off** unless you've confirmed it works in your space (see
+`mule-app/README.md` → Known limitations).
+
+### 6. Set properties
+In Runtime Manager → the app → **Settings → Properties**:
+- **Secured:** `gemini.apiKey`, `anypoint.clientId`, `anypoint.clientSecret`
+  (+ `mcpAuth.salesforce.clientId` / `clientSecret` if used). See *Setting the secure properties* above.
+- **Plain (if used):** `mcpAuth.salesforce.tokenUrl=https://<your-domain>.my.salesforce.com/services/oauth2/token`
+- Anything from *Customising the matching rules* (thresholds, preferred assets, judge model, nightly schedule).
+
+**Apply**. The app restarts with them.
+
+### 7. First scan
+Open `https://<your-app-url>/`, go to **Scan**, then **Start scan**. A first scan of ~100 assets takes
+2–4 minutes; rescans are faster (embeddings and verdicts are cached). Or by API:
+```bash
+curl -X POST https://<your-app-url>/api/v1/scans -H 'Content-Type: application/json' -d '{}'
+```
+
+### 8. Updating later
+After a code change: rebuild (step 4), then in Runtime Manager choose **Choose file → upload the new
+jar → Apply**. Properties and secrets are kept. (The MuleSoft MCP `deploy_mule_application` tool
+can create a deployment but not replace one.)
+
+### Troubleshooting
+| Symptom | Cause / fix |
+|---|---|
+| `mvn package` can't resolve `sprawl-scanner-api` | spec not published to your org (step 2), or Exchange credentials missing (step 3) |
+| Scan fails `Anypoint token HTTP 401` | wrong `anypoint.clientId/Secret`, or the Connected App lacks Exchange Viewer |
+| Many MCP servers / agents listed as gaps with `tools/list failed` or timeouts | the app can't reach their upstream URLs: deploy into the same private space, or accept them as gaps |
+| Judge verdicts missing, `HTTP 429` | Gemini rate limit: use Flash, lower `gemini.proRpm`, or raise your Gemini tier |
+| `OS:STORE_NOT_AVAILABLE` | Object Store v2 enabled but not working in your space: turn it off |
+| "No completed scan yet" after a redeploy | expected: results live in the replica; run a scan |
+
+Matching-rule tuning: [`mule-app/README.md` → Customising the matching rules](mule-app/README.md#customising-the-matching-rules).

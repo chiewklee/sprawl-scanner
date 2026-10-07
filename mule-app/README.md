@@ -139,17 +139,10 @@ nightly cron `0 0 2 * * ?` UTC, `scan.schedule.enabled`). Secrets are **Secured 
 Properties** on the deployment, never in files. See the repo root README for the list and the
 three ways to set them (Runtime Manager UI, `scripts/set_secure_properties.py`, local `-M-D`).
 
-## Redeploying a code change
+## Deploying
 
-Before building from the repo, set your own values: `-Dch2.target=<your private space>` on the
-Maven command, and the deployment property `mcpAuth.salesforce.tokenUrl` (Runtime Manager →
-Properties) if you use the Salesforce MCP auth. The repo ships placeholders for both.
-
-The MCP deploy tool only creates deployments. To update in place (keeps secrets/settings):
-1. `mvn -B clean package -DskipTests` with JDK 17.
-2. Publish the jar to Exchange as the next version of asset
-   `sprawl-scanner-api-impl-1.0.0-SNAPSHOT-mule-application` (type `app`).
-3. PATCH the deployment's `application.ref.version` to that version (AMC API).
+First deployment to your own org, and updating it later: see the repo root README,
+[Deploy to your own environment](../README.md#deploy-to-your-own-environment).
 
 ## Known limitations
 
